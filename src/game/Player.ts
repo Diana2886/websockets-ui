@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { Board, Position } from '../types/index'
 import { WebSocket } from 'ws'
+import { Ship } from '../types/ship'
 
 export class Player {
   public id: string
@@ -9,14 +9,21 @@ export class Player {
   public error: boolean
   public errorText: string
   public ws: WebSocket
+  private ships: Ship[]
 
-  constructor(name: string, password: string, ws: WebSocket) {
+  constructor(
+    name: string,
+    password: string,
+    ws: WebSocket,
+    ships: Ship[] = []
+  ) {
     this.id = randomUUID()
     this.name = name
     this.password = password
     this.error = false
     this.errorText = ''
     this.ws = ws
+    this.ships = ships
   }
 
   getData() {

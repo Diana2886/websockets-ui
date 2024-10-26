@@ -13,9 +13,20 @@ export class Room {
   }
 
   addPlayer(player: Player) {
-    if (this.players.length >= 2) throw new Error('Room is full')
     this.players.push(player)
-    if (this.players.length === 2) this.isGameStarted = true
+  }
+
+  createAvailableRoom(player: Player) {
+    this.addPlayer(player)
+    return {
+      roomId: this.id,
+      roomUsers: [
+        {
+          name: player.name,
+          index: player.id,
+        },
+      ],
+    }
   }
 
   getPlayers() {
