@@ -6,7 +6,8 @@ import { Game } from './Game'
 import { RoomType } from '../types/room'
 import { MessageType } from '../types/message'
 import { AddShipsDataType, AttackDataType, RegDataType } from '../types/data'
-import { parseData } from './helpers'
+import { parseData } from '../utils/helpers'
+import { Ship } from './Ship'
 
 export class GameServer {
   private wsServer: WebSocketServer
@@ -53,6 +54,9 @@ export class GameServer {
         break
       case MessageType.ATTACK:
         this.handleAttack(ws, parseData(data))
+        break
+      case MessageType.RANDOM_ATTACK:
+        this.handleRandomAttack(ws, parseData(data))
         break
       default:
         ws.send(JSON.stringify({ error: 'Invalid message type' }))
@@ -163,26 +167,100 @@ export class GameServer {
 
   private startGame(ws: WebSocket, parsedData: AddShipsDataType) {
     const { gameId, ships, indexPlayer } = parsedData
-    console.log('indexPlayer', indexPlayer)
+    console.log('ships', ships)
 
     this.players.forEach((player) => {
       if (player.id === indexPlayer) {
+        player.setShips(ships.map((shipData) => new Ship(shipData)))
+
         ws.send(
           JSON.stringify({
             type: 'start_game',
-            data: {
+            data: JSON.stringify({
               ships,
               currentPlayerIndex: indexPlayer,
-            },
+            }),
             id: 0,
           })
         )
       }
     })
+
+    const game = Array.from(this.games.values()).find((g) => g.id === gameId)
+    if (game) {
+      this.sendTurnInfo(game)
+    }
   }
 
   private handleAttack(ws: WebSocket, data: AttackDataType) {
-    const { x, y, gameId: gameIndex, indexPlayer: playerId } = data
+    const { x, y, gameId, indexPlayer } = data
+    const game = Array.from(this.games.values()).find((g) => g.id === gameId)
+
+    if (game) {
+      const attackResult = game.processAttack(x, y, indexPlayer)
+      if (attackResult) {
+        game.getPlayers().forEach((player) => {
+          player.ws.send(
+            JSON.stringify({
+              type: 'attack',
+              data: JSON.stringify({
+                position: { x, y },
+                currentPlayer: indexPlayer,
+                status: attackResult,
+              }),
+              id: 0,
+            })
+          )
+        })
+      }
+
+      if (game.isGameOver()) {
+        console.log('Game over!')
+        this.sendFinishGame(game)
+      } else {
+        this.sendTurnInfo(game)
+      }
+    }
+  }
+
+  private handleRandomAttack(
+    ws: WebSocket,
+    data: { gameId: string; indexPlayer: string }
+  ) {
+    const { gameId, indexPlayer } = data
+    const game = Array.from(this.games.values()).find((g) => g.id === gameId)
+
+    if (game) {
+      const { x, y } = game.generateRandomCoordinates()
+      this.handleAttack(ws, { gameId, x, y, indexPlayer })
+      this.sendTurnInfo(game)
+    }
+  }
+
+  private sendTurnInfo(game: Game) {
+    const currentPlayer = game.getCurrentPlayerId()
+    game.getPlayers().forEach((player) => {
+      player.ws.send(
+        JSON.stringify({
+          type: 'turn',
+          data: JSON.stringify({ currentPlayer }),
+          id: 0,
+        })
+      )
+    })
+  }
+
+  private sendFinishGame(game: Game) {
+    const winner = game.getWinner()
+    game.getPlayers().forEach((player) => {
+      player.ws.send(
+        JSON.stringify({
+          type: 'finish',
+          data: JSON.stringify({ winPlayer: winner }),
+          id: 0,
+        })
+      )
+    })
   }
 
   private sendError(ws: WebSocket, message: string) {
