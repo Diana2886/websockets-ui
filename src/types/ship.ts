@@ -1,4 +1,4 @@
-export interface Ship {
+export interface ShipInterface {
   position: {
     x: number
     y: number
