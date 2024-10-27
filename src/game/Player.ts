@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { WebSocket } from 'ws'
-import { Ship } from '../types/ship'
+import { Ship } from './Ship'
 
 export class Player {
   public id: string
@@ -23,7 +23,7 @@ export class Player {
     this.error = false
     this.errorText = ''
     this.ws = ws
-    this.ships = ships
+    this.ships = []
   }
 
   getData() {
@@ -33,5 +33,13 @@ export class Player {
       error: this.error,
       errorText: this.errorText,
     }
+  }
+
+  getShips() {
+    return this.ships
+  }
+
+  setShips(ships: Ship[]) {
+    this.ships = ships
   }
 }
