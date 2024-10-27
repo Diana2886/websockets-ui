@@ -228,10 +228,24 @@ export class GameServer {
     data: { gameId: string; indexPlayer: string }
   ) {
     const { gameId, indexPlayer } = data
+    const attackingPlayer = Array.from(this.players.values()).find(
+      (p) => p.id === indexPlayer
+    )
+    if (!attackingPlayer) return null
+
+    const opponent = Array.from(this.players.values()).find(
+      (p) => p.id !== indexPlayer
+    )
+    if (!opponent) return null
+
     const game = Array.from(this.games.values()).find((g) => g.id === gameId)
 
+    let x: number, y: number
+
     if (game) {
-      const { x, y } = game.generateRandomCoordinates()
+      do {
+        ;({ x, y } = game.generateRandomCoordinates())
+      } while (opponent.hasAttackedCell(x, y))
       this.handleAttack(ws, { gameId, x, y, indexPlayer })
       this.sendTurnInfo(game)
     }

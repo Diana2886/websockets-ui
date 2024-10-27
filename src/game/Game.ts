@@ -22,11 +22,21 @@ export class Game {
     y: number,
     attackingPlayerId: string
   ): 'miss' | 'killed' | 'shot' | null {
+    if (this.getCurrentPlayerId() !== attackingPlayerId) {
+      return null
+    }
+
     const attackingPlayer = this.players.find((p) => p.id === attackingPlayerId)
     if (!attackingPlayer) return null
 
     const opponent = this.players.find((p) => p.id !== attackingPlayerId)
     if (!opponent) return null
+
+    if (opponent.hasAttackedCell(x, y)) {
+      return null
+    }
+
+    opponent.recordAttack(x, y)
 
     const opponentShips = opponent.getShips()
     let result: 'miss' | 'killed' | 'shot' | null = 'miss'
@@ -40,12 +50,17 @@ export class Game {
         if (result === 'killed') {
           const occupiedCells = ship.getOccupiedCells()
 
+          for (const cell of occupiedCells) {
+            this.markKilled(cell.x, cell.y, attackingPlayer)
+          }
+
           const surroundingCells = this.getSurroundingCells(
             occupiedCells,
             GRID_SIZE
           )
 
           for (const cell of surroundingCells) {
+            opponent.recordAttack(cell.x, cell.y)
             this.markMiss(cell.x, cell.y, attackingPlayer)
           }
         }
@@ -132,6 +147,20 @@ export class Game {
           position: { x, y },
           currentPlayer: attackingPlayer.id,
           status: 'miss',
+        }),
+        id: 0,
+      })
+    )
+  }
+
+  private markKilled(x: number, y: number, attackingPlayer: Player) {
+    attackingPlayer.ws.send(
+      JSON.stringify({
+        type: 'attack',
+        data: JSON.stringify({
+          position: { x, y },
+          currentPlayer: attackingPlayer.id,
+          status: 'killed',
         }),
         id: 0,
       })

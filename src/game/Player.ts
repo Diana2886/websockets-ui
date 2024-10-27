@@ -10,6 +10,7 @@ export class Player {
   public errorText: string
   public ws: WebSocket
   private ships: Ship[]
+  private attackedCells: Set<string>
 
   constructor(
     name: string,
@@ -24,6 +25,7 @@ export class Player {
     this.errorText = ''
     this.ws = ws
     this.ships = []
+    this.attackedCells = new Set()
   }
 
   getData() {
@@ -41,5 +43,13 @@ export class Player {
 
   setShips(ships: Ship[]) {
     this.ships = ships
+  }
+
+  hasAttackedCell(x: number, y: number): boolean {
+    return this.attackedCells.has(`${x},${y}`)
+  }
+
+  recordAttack(x: number, y: number) {
+    this.attackedCells.add(`${x},${y}`)
   }
 }
