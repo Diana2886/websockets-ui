@@ -4,12 +4,10 @@ import { randomUUID } from 'node:crypto'
 export class Room {
   public id: string
   private players: Player[]
-  public isGameStarted: boolean
 
   constructor() {
     this.id = randomUUID()
     this.players = []
-    this.isGameStarted = false
   }
 
   addPlayer(player: Player) {
@@ -31,5 +29,13 @@ export class Room {
 
   getPlayers() {
     return this.players
+  }
+
+  removePlayer(playerId: string) {
+    this.players = this.players.filter((player) => player.id !== playerId)
+  }
+
+  isEmpty(): boolean {
+    return this.players.length === 0
   }
 }

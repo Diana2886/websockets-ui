@@ -19,20 +19,26 @@ export class GameServer {
   constructor(port: number) {
     const server = http.createServer()
     this.wsServer = new WebSocketServer({ server })
-    server.listen(port)
+    server.listen(port, () => {
+      console.log(`WebSocket server started on ws://localhost:${port}`)
+    })
 
     this.wsServer.on('connection', (ws) => this.handleConnection(ws))
+
+    process.on('SIGINT', () => this.shutdown())
+    process.on('SIGTERM', () => this.shutdown())
   }
 
   private handleConnection(ws: WebSocket) {
     ws.on('message', (data) => {
       const message = JSON.parse(data.toString())
-      console.log('message', message)
+      console.log('Received command:', message)
       this.handleMessage(ws, message)
     })
 
     ws.on('close', () => {
-      this.players.delete(ws)
+      console.log('Client disconnected')
+      this.cleanupDisconnectedClient(ws)
     })
   }
 
@@ -67,24 +73,48 @@ export class GameServer {
     const { name, password } = data
     let player = Array.from(this.players.values()).find((p) => p.name === name)
 
-    if (player && player.password !== password) {
-      player.error = true
-      player.errorText = 'Incorrect password for this user'
+    if (player) {
+      if (player.password !== password) {
+        player.error = true
+        player.errorText = 'Incorrect password for this user'
+      } else {
+        player.error = false
+        player.errorText = ''
+      }
     }
 
     if (!player) {
       player = new Player(name, password, ws)
       this.players.set(ws, player)
     }
-    console.log('player.id', player!.id)
 
-    ws.send(
-      JSON.stringify({
-        type: MessageType.REGISTER,
-        data: JSON.stringify(player.getData()),
-        id: 0,
-      })
-    )
+    const result = JSON.stringify({
+      type: MessageType.REGISTER,
+      data: JSON.stringify(player.getData()),
+      id: 0,
+    })
+
+    console.log('Result:', result)
+    ws.send(result)
+  }
+
+  private updateWinners() {
+    const winnersTable = Array.from(this.players.values()).map((player) => ({
+      name: player.name,
+      wins: player.getWins(),
+    }))
+
+    const result = {
+      type: MessageType.UPDATE_WINNERS,
+      data: JSON.stringify(winnersTable),
+      id: 0,
+    }
+
+    console.log('Result:', result)
+
+    this.players.forEach((player) => {
+      player.ws.send(JSON.stringify(result))
+    })
   }
 
   private broadcastRoomsUpdate() {
@@ -96,15 +126,17 @@ export class GameServer {
 
     const roomList = JSON.stringify(Array.from(this.rooms.values()))
 
-    this.players.forEach((_, ws) => {
-      ws.send(
-        JSON.stringify({
-          type: 'update_room',
-          data: roomList,
-          id: 0,
-        })
-      )
+    const result = JSON.stringify({
+      type: MessageType.UPDATE_ROOM,
+      data: roomList,
+      id: 0,
     })
+
+    console.log('Result:', result)
+    this.players.forEach((_, ws) => {
+      ws.send(result)
+    })
+    this.updateWinners()
   }
 
   private createRoom(ws: WebSocket) {
@@ -113,7 +145,6 @@ export class GameServer {
 
     const room = new Room()
     this.rooms.set(room.id, room.createAvailableRoom(player))
-    console.log('this.rooms', this.rooms)
     this.allRooms.set(room.id, room)
 
     this.broadcastRoomsUpdate()
@@ -124,6 +155,11 @@ export class GameServer {
     const player = this.players.get(ws)
 
     if (player && room) {
+      if (room.roomUsers.find((user) => user.index === player.id)) {
+        this.sendError(ws, 'You are already in this room')
+        return
+      }
+
       room.roomUsers.push({
         name: player.name,
         index: player.id,
@@ -146,17 +182,16 @@ export class GameServer {
           )?.[0]
 
           if (userSocket) {
-            console.log('user.index', user.index)
+            const result = JSON.stringify({
+              type: MessageType.CREATE_GAME,
+              data: JSON.stringify({
+                idGame: game.id,
+                idPlayer: user.index,
+              }),
+            })
 
-            userSocket.send(
-              JSON.stringify({
-                type: 'create_game',
-                data: JSON.stringify({
-                  idGame: game.id,
-                  idPlayer: user.index,
-                }),
-              })
-            )
+            console.log('Result:', result)
+            userSocket.send(result)
           }
         })
       }
@@ -167,22 +202,22 @@ export class GameServer {
 
   private startGame(ws: WebSocket, parsedData: AddShipsDataType) {
     const { gameId, ships, indexPlayer } = parsedData
-    console.log('ships', ships)
 
     this.players.forEach((player) => {
       if (player.id === indexPlayer) {
         player.setShips(ships.map((shipData) => new Ship(shipData)))
 
-        ws.send(
-          JSON.stringify({
-            type: 'start_game',
-            data: JSON.stringify({
-              ships,
-              currentPlayerIndex: indexPlayer,
-            }),
-            id: 0,
-          })
-        )
+        const result = JSON.stringify({
+          type: MessageType.START_GAME,
+          data: JSON.stringify({
+            ships,
+            currentPlayerIndex: indexPlayer,
+          }),
+          id: 0,
+        })
+
+        console.log('Result:', result)
+        ws.send(result)
       }
     })
 
@@ -200,23 +235,24 @@ export class GameServer {
       const attackResult = game.processAttack(x, y, indexPlayer)
       if (attackResult) {
         game.getPlayers().forEach((player) => {
-          player.ws.send(
-            JSON.stringify({
-              type: 'attack',
-              data: JSON.stringify({
-                position: { x, y },
-                currentPlayer: indexPlayer,
-                status: attackResult,
-              }),
-              id: 0,
-            })
-          )
+          const result = JSON.stringify({
+            type: 'attack',
+            data: JSON.stringify({
+              position: { x, y },
+              currentPlayer: indexPlayer,
+              status: attackResult,
+            }),
+            id: 0,
+          })
+
+          console.log('Result:', result)
+          player.ws.send(result)
         })
       }
 
       if (game.isGameOver()) {
-        console.log('Game over!')
         this.sendFinishGame(game)
+        this.updateWinners()
       } else {
         this.sendTurnInfo(game)
       }
@@ -254,30 +290,64 @@ export class GameServer {
   private sendTurnInfo(game: Game) {
     const currentPlayer = game.getCurrentPlayerId()
     game.getPlayers().forEach((player) => {
-      player.ws.send(
-        JSON.stringify({
-          type: 'turn',
-          data: JSON.stringify({ currentPlayer }),
-          id: 0,
-        })
-      )
+      const result = JSON.stringify({
+        type: MessageType.TURN,
+        data: JSON.stringify({ currentPlayer }),
+        id: 0,
+      })
+
+      console.log('Result:', result)
+      player.ws.send(result)
     })
   }
 
   private sendFinishGame(game: Game) {
     const winner = game.getWinner()
     game.getPlayers().forEach((player) => {
-      player.ws.send(
-        JSON.stringify({
-          type: 'finish',
-          data: JSON.stringify({ winPlayer: winner }),
-          id: 0,
-        })
-      )
+      const result = JSON.stringify({
+        type: MessageType.FINISH,
+        data: JSON.stringify({ winPlayer: winner }),
+        id: 0,
+      })
+
+      console.log('Result:', result)
+      player.ws.send(result)
     })
   }
 
   private sendError(ws: WebSocket, message: string) {
     ws.send(JSON.stringify({ error: message }))
+  }
+
+  private shutdown() {
+    console.log('Shutting down WebSocket server...')
+    this.wsServer.clients.forEach((client) => client.close())
+    this.wsServer.close(() => {
+      this.players.clear()
+      this.rooms.clear()
+      this.allRooms.clear()
+      this.games.clear()
+
+      console.log('Server closed')
+      process.exit(0)
+    })
+  }
+
+  private cleanupDisconnectedClient(ws: WebSocket) {
+    const player = this.players.get(ws)
+    if (!player) return
+
+    this.players.delete(ws)
+
+    if (this.games.has(ws)) {
+      this.games.delete(ws)
+    }
+
+    for (const [roomId, room] of this.allRooms) {
+      room.removePlayer(player.id)
+      if (room.isEmpty()) {
+        this.allRooms.delete(roomId)
+      }
+    }
   }
 }

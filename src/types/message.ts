@@ -5,4 +5,11 @@ export enum MessageType {
   ADD_SHIPS = 'add_ships',
   ATTACK = 'attack',
   RANDOM_ATTACK = 'randomAttack',
+  UPDATE_ROOM = 'update_room',
+  CREATE_GAME = 'create_game',
+  START_GAME = 'start_game',
+  TURN = 'turn',
+  FINISH = 'finish',
+  UPDATE_WINNERS = 'update_winners',
+  SINGLE_PLAY = 'single_play',
 }

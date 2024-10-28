@@ -90,6 +90,7 @@ export class Game {
           opponent.getShips().every((ship) => ship.isDestroyed())
         )
     )
+    winner && winner.incrementWins()
     return winner ? winner.id : null
   }
 
